@@ -640,6 +640,34 @@ ngx_http_auth_digest_verify_hash(ngx_http_request_t *r,
   ngx_md5_t md5;
   u_char hash[16];
 
+  // incoming requests with CONNECT method don't set `r->unparsed_uri`, matching
+  // needs to be done based on server & port
+#ifdef NGX_HTTP_PROXY_CONNECT
+  if (r->method_name.len == 7 && ngx_strncmp(r->method_name.data, "CONNECT", 7) == 0) {
+      // CONNECT requests don't have `r->unparsed_uri` set, so the URI must be validated
+      // against server address (& optionally port)
+      size_t uri_len = 0;
+      while (uri_len < fields->uri.len && fields->uri.data[uri_len++] != ':');
+      if (uri_len < fields->uri.len && fields->uri.data[uri_len] == ':') {
+        uri_len--;
+      }
+      if (!((r->connect_host.len == (uri_len - 1)) &&
+            (ngx_strncmp(r->connect_host.data, fields->uri.data,
+                         uri_len) == 0))) {
+        return NGX_DECLINED;
+      }
+      if (uri_len + 1 < fields->uri.len && fields->uri.data[uri_len + 1] == ':') {
+        // need to check port as well
+        uri_len += 2; // skip `:` and position pointer at port
+        u_char* uri_port = fields->uri.data + uri_len;
+        size_t uri_port_len = fields->uri.len - uri_len;
+        if (!((uri_port_len != r->connect_port.len) &&
+                (ngx_strncmp(uri_port, r->connect_port.data, ngx_min(uri_port_len, r->connect_port.len)) == 0))) {
+          return NGX_DECLINED;
+        }
+      }
+  } else {
+#endif
   // The .net Http library sends the incorrect URI as part of the Authorization
   // response. Instead of the complete URI including the query parameters it
   // sends only the basic URI without the query parameters. It also uses this
@@ -660,6 +688,9 @@ ngx_http_auth_digest_verify_hash(ngx_http_request_t *r,
       return NGX_DECLINED;
     }
   }
+#ifdef NGX_HTTP_PROXY_CONNECT
+  }
+#endif
 
   //  the hashing scheme:
   //    digest:
@@ -839,7 +870,7 @@ ngx_http_auth_digest_verify_hash(ngx_http_request_t *r,
     // Set the stale value to 1 because the nonce value was not found in 
     // the digest tree, but the computation is valid.
     fields->stale = 1;
-  
+   
   invalid:
     // nonce is invalid/expired or client reused an nc value. suspicious...
     ngx_shmtx_unlock(&shpool->mutex);
