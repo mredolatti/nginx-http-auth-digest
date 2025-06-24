@@ -640,8 +640,6 @@ ngx_http_auth_digest_verify_hash(ngx_http_request_t *r,
   ngx_md5_t md5;
   u_char hash[16];
 
-  // incoming requests with CONNECT method don't set `r->unparsed_uri`, matching
-  // needs to be done based on server & port
 #ifdef NGX_HTTP_PROXY_CONNECT
   if (r->method_name.len == 7 && ngx_strncmp(r->method_name.data, "CONNECT", 7) == 0) {
       // CONNECT requests don't have `r->unparsed_uri` set, so the URI must be validated
