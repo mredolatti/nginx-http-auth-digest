@@ -870,7 +870,7 @@ ngx_http_auth_digest_verify_hash(ngx_http_request_t *r,
     // Set the stale value to 1 because the nonce value was not found in 
     // the digest tree, but the computation is valid.
     fields->stale = 1;
-   
+  
   invalid:
     // nonce is invalid/expired or client reused an nc value. suspicious...
     ngx_shmtx_unlock(&shpool->mutex);
