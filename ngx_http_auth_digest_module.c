@@ -641,29 +641,34 @@ ngx_http_auth_digest_verify_hash(ngx_http_request_t *r,
   u_char hash[16];
 
 #ifdef NGX_HTTP_PROXY_CONNECT
-  if (r->method_name.len == 7 && ngx_strncmp(r->method_name.data, "CONNECT", 7) == 0) {
-      // CONNECT requests don't have `r->unparsed_uri` set, so the URI must be validated
-      // against server address (& optionally port)
-      size_t uri_len = 0;
-      while (uri_len < fields->uri.len && fields->uri.data[uri_len++] != ':');
-      if (uri_len < fields->uri.len && fields->uri.data[uri_len] == ':') {
-        uri_len--;
-      }
-      if (!((r->connect_host.len == (uri_len - 1)) &&
-            (ngx_strncmp(r->connect_host.data, fields->uri.data,
-                         uri_len) == 0))) {
-        return NGX_DECLINED;
-      }
-      if (uri_len + 1 < fields->uri.len && fields->uri.data[uri_len + 1] == ':') {
-        // need to check port as well
-        uri_len += 2; // skip `:` and position pointer at port
-        u_char* uri_port = fields->uri.data + uri_len;
-        size_t uri_port_len = fields->uri.len - uri_len;
-        if (!((uri_port_len != r->connect_port.len) &&
-                (ngx_strncmp(uri_port, r->connect_port.data, ngx_min(uri_port_len, r->connect_port.len)) == 0))) {
-          return NGX_DECLINED;
-        }
-      }
+  if (r->method ==  NGX_HTTP_CONNECT) {
+    // CONNECT requests don't have `r->unparsed_uri` set, so the URI must be validated
+    // against server address (host & port)
+    u_char* host_end = memchr(fields->uri.data, ':', fields->uri.len);
+    if (host_end == NULL) {
+      // CONNECT requests have no default port, if `:` is not found request is considered malformed
+      return NGX_DECLINED;
+    }
+
+    size_t host_len = host_end - fields->uri.data;
+    if (!((r->connect_host.len == (host_len)) &&
+          (ngx_strncmp(r->connect_host.data, fields->uri.data,
+                       host_len) == 0))) {
+      return NGX_DECLINED;
+    }
+
+    u_char* port_start = host_end + 1;
+    u_char* uri_end = fields->uri.data + fields->uri.len;
+    if (port_start >= uri_end) {
+      // Port shold have at least 1 digit
+      return NGX_DECLINED;
+    }
+
+    size_t port_len = uri_end - port_start;
+    if (!((port_len == r->connect_port.len) &&
+          (ngx_strncmp(port_start, r->connect_port.data, ngx_min(port_len, r->connect_port.len)) == 0))) {
+      return NGX_DECLINED;
+    }
   } else {
 #endif
   // The .net Http library sends the incorrect URI as part of the Authorization
